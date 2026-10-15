@@ -1,0 +1,165 @@
+name: Native Android Cloud Build
+on: [push, workflow_dispatch]
+
+jobs:
+  initialize_and_compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Repository Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java Development Kit Environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle Compiler Environment
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Automatically Construct Project Directory Tree
+        run: |
+          mkdir -p app/src/main/java/com/emmanuelmabheure
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/drawable-xxhdpi-v4
+          echo "include ':app'" > settings.gradle
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+          }
+          allprojects {
+              repositories { google(); mavenCentral() }
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.emmanuelmabheure'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.emmanuelmabheure"
+                  minSdk 31
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+          echo "-dontobfuscate\n-dontoptimize\n-keep class com.emmanuelmabheure.** { *; }" > app/proguard-rules.pro
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://android.com" package="com.emmanuelmabheure">
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+              <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+              <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+              <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <application android:allowBackup="true" android:icon="@android:drawable/sym_def_app_icon" android:label="HiPhone Launcher" android:hardwareAccelerated="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service android:name=".SystemOverlayService" android:exported="false" android:permission="android.permission.SYSTEM_ALERT_WINDOW" />
+              </application>
+          </manifest>
+          EOF
+          cat << 'EOF' > app/src/main/java/com/emmanuelmabheure/MainActivity.java
+          package com.emmanuelmabheure;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  LinearLayout dashboard = new LinearLayout(this);
+                  dashboard.setOrientation(LinearLayout.VERTICAL);
+                  dashboard.setPadding(50, 50, 50, 50);
+                  TextView titleView = new TextView(this);
+                  titleView.setText("HiPhone Launcher Console");
+                  titleView.setTextSize(22);
+                  dashboard.addView(titleView);
+                  setContentView(dashboard);
+                  if (Settings.canDrawOverlays(this)) {
+                      startService(new Intent(this, SystemOverlayService.class));
+                  } else {
+                      startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/emmanuelmabheure/SystemOverlayService.java
+          package com.emmanuelmabheure;
+          import android.app.Service;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.graphics.PixelFormat;
+          import android.os.IBinder;
+          import android.view.Gravity;
+          import android.view.LayoutInflater;
+          import android.view.View;
+          import android.view.WindowManager;
+          public class SystemOverlayService extends Service {
+              private WindowManager windowManager;
+              private View statusBarView;
+              @Override public IBinder onBind(Intent intent) { return null; }
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+                  WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                      WindowManager.LayoutParams.MATCH_PARENT,
+                      (int) (44 * getResources().getDisplayMetrics().density),
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                      PixelFormat.TRANSLUCENT
+                  );
+                  params.gravity = Gravity.TOP;
+                  LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+                  statusBarView = inflater.inflate(getResources().getIdentifier("custom_status_bar", "layout", getPackageName()), null);
+                  windowManager.addView(statusBarView, params);
+              }
+              @Override
+              public void onDestroy() {
+                  super.onDestroy();
+                  if (statusBarView != null) windowManager.removeView(statusBarView);
+              }
+          }
+          EOF
+          cat << 'EOF' > app/src/main/res/layout/custom_status_bar.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <RelativeLayout xmlns:android="http://android.com" android:layout_width="match_parent" android:layout_height="44dp" android:background="#00000000">
+              <TextView android:id="@+id/left_carrier_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_alignParentLeft="true" android:layout_centerVertical="true" android:layout_marginLeft="16dp" android:text="Vanilla" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold" />
+              <LinearLayout android:id="@+id/right_icon_cluster" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_alignParentRight="true" android:layout_centerVertical="true" android:layout_marginRight="16dp" android:orientation="horizontal" android:gravity="center_vertical">
+                  <TextView android:id="@+id/network_type_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="5G" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold" android:layout_marginRight="6dp" />
+                  <ImageView android:id="@+id/cellular_signal_icon" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginRight="6dp" android:src="@drawable/stat_sys_signal_4" />
+                  <ImageView android:id="@+id/wifi_signal_icon" android:layout_width="16dp" android:layout_height="13dp" android:layout_marginRight="6dp" android:src="@drawable/stat_sys_wifi_signal_4" />
+                  <ImageView android:id="@+id/battery_status_icon" android:layout_width="25dp" android:layout_height="12dp" android:src="@drawable/stat_sys_battery_100" />
+              </LinearLayout>
+          </RelativeLayout>
+          EOF
+
+          echo "vault_armed" > app/src/main/res/drawable-xxhdpi-v4/placeholder.txt
+
+      - name: Execute Background Gradle Task to Compile Release Package Binary Bundle
+        run: gradle assembleRelease
+
+      - name: Upload Production Ready APK File Asset to Cloud Workflow Dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: HiPhone-Launcher-Package
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
