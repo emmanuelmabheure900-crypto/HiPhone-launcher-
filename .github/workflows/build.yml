@@ -153,7 +153,7 @@ jobs:
           </RelativeLayout>
           EOF
 
-          echo "vault_armed" > app/src/main/res/drawable-xxhdpi-v4/placeholder.txt
+          echo "vault_armed" > app/src/main/res/drawable-xxhdpi-v4/placeholder.png
 
       - name: Execute Background Gradle Task to Compile Release Package Binary Bundle
         run: gradle assembleRelease
